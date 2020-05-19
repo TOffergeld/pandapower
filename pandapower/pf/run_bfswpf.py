@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016-2018 by University of Kassel and Fraunhofer Institute for Energy Economics
+# Copyright (c) 2016-2020 by University of Kassel and Fraunhofer Institute for Energy Economics
 # and Energy System Technology (IEE), Kassel. All rights reserved.
 
 
@@ -9,17 +9,17 @@ from time import time  # alternatively use import timeit.default_timer as time
 
 import numpy as np
 import scipy as sp
-from pandapower.idx_brch import F_BUS, T_BUS, BR_R, BR_X, BR_B, TAP, BR_STATUS, SHIFT
-from pandapower.idx_bus import BUS_I, BUS_TYPE, GS, BS
-from pandapower.idx_gen import GEN_BUS, QG, QMAX, QMIN, GEN_STATUS, VG
-from pandapower.pf.makeSbus import makeSbus
+from pandapower.pypower.idx_brch import F_BUS, T_BUS, BR_R, BR_X, BR_B, TAP, BR_STATUS, SHIFT
+from pandapower.pypower.idx_bus import BUS_I, BUS_TYPE, GS, BS
+from pandapower.pypower.idx_gen import GEN_BUS, QG, QMAX, QMIN, GEN_STATUS, VG
+from pandapower.pypower.makeSbus import makeSbus
 from scipy.sparse import csr_matrix, csgraph
 from six import iteritems
 
 from pandapower.auxiliary import ppException
-from pandapower.pf.bustypes import bustypes
-from pandapower.pf.newtonpf import _evaluate_Fx, _check_for_convergence
-from pandapower.pf.pfsoln import pfsoln
+from pandapower.pypower.bustypes import bustypes
+from pandapower.pypower.newtonpf import _evaluate_Fx, _check_for_convergence
+from pandapower.pypower.pfsoln import pfsoln
 from pandapower.pf.run_newton_raphson_pf import _get_Y_bus
 from pandapower.pf.runpf_pypower import _import_numba_extensions_if_flag_is_true
 from pandapower.pf.ppci_variables import _get_pf_variables_from_ppci
@@ -170,13 +170,13 @@ def _make_bibc_bcbv(bus, branch, graph):
 def _get_bibc_bcbv(ppci, options, bus, branch, graph):
     recycle = options["recycle"]
 
-    if recycle["bfsw"] and ppci["internal"]["DLF"].size:
+    if recycle is not None and recycle["bfsw"] and ppci["internal"]["DLF"].size:
         DLF, buses_ordered_bfs_nets = ppci["internal"]['DLF'], \
                                       ppci["internal"]['buses_ord_bfs_nets']
     else:
         ## build matrices
         DLF, buses_ordered_bfs_nets = _make_bibc_bcbv(bus, branch, graph)
-        if recycle["bfsw"]:
+        if recycle is not None and recycle["bfsw"]:
             ppci["internal"]['DLF'], \
             ppci["internal"]['buses_ord_bfs_nets'] = DLF, buses_ordered_bfs_nets
 

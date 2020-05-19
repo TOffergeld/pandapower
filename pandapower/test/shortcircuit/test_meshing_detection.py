@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016-2018 by University of Kassel and Fraunhofer Institute for Energy Economics
+# Copyright (c) 2016-2020 by University of Kassel and Fraunhofer Institute for Energy Economics
 # and Energy System Technology (IEE), Kassel. All rights reserved.
 
 
@@ -14,7 +14,7 @@ import pandapower.shortcircuit as sc
 
 @pytest.fixture
 def meshed_grid():
-    net = pp.from_pickle(os.path.join(pp.pp_dir, "test", "shortcircuit", "sc_test_meshed_grid.p"))
+    net = pp.from_json(os.path.join(pp.pp_dir, "test", "shortcircuit", "sc_test_meshed_grid.json"))
     bid = pp.create_bus(net, vn_kv=10.)
     pp.create_switch(net, net.ext_grid.bus.iloc[0], bid, et="b")
     net.ext_grid.bus.iloc[0] = bid
@@ -168,4 +168,4 @@ def test_min_6_meshed_grid(meshed_grid):
     assert (abs(net.res_bus_sc.ith_ka.at[9] - 0.9327717) <1e-5)
 
 if __name__ == '__main__':
-    pytest.main(['-xs'])
+    pytest.main(["test_meshing_detection.py", '-xs'])

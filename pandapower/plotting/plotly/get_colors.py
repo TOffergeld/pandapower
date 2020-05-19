@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016-2018 by University of Kassel and Fraunhofer Institute for Energy Economics
+# Copyright (c) 2016-2020 by University of Kassel and Fraunhofer Institute for Energy Economics
 # and Energy System Technology (IEE), Kassel. All rights reserved.
 
 
@@ -24,7 +24,7 @@ def get_plotly_color(color_string):
         converted = _to_plotly_color(mplc.to_rgba(color_string))
         return converted
     except ValueError:
-        return None
+        return color_string
 
 
 def get_plotly_color_palette(n):
@@ -37,7 +37,8 @@ def get_plotly_color_palette(n):
 
 def _to_plotly_palette(scl, transparence=None):
     """
-    converts a rgb color palette in format (0-1,0-1,0-1) to a plotly color palette 'rgb(0-255,0-255,0-255)'
+    converts a rgb color palette in format (0-1,0-1,0-1) to a plotly color palette
+    'rgb(0-255,0-255,0-255)'
     """
     _out = []
     for color in scl:
@@ -56,7 +57,8 @@ def _to_plotly_color(scl, transparence=None):
     """
     converts a rgb color in format (0-1,0-1,0-1) to a plotly color 'rgb(0-255,0-255,0-255)'
     """
-    plotly_col = [255 * _c for _c in mplc.to_rgba(scl)] if len(scl) == 3 else [255 * _c for _c in mplc.to_rgb(scl)]
+    plotly_col = [255 * _c for _c in mplc.to_rgba(scl)] if len(scl) == 3 else [255 * _c for _c in
+                                                                               mplc.to_rgb(scl)]
     if transparence is not None:
         assert 0. <= transparence <= 1.0
         plotly_col[3] = transparence

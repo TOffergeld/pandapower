@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016-2018 by University of Kassel and Fraunhofer Institute for Energy Economics
+# Copyright (c) 2016-2020 by University of Kassel and Fraunhofer Institute for Energy Economics
 # and Energy System Technology (IEE), Kassel. All rights reserved.
-
-
 
 
 import copy
@@ -18,7 +16,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-import pandapower.topology as top
 from pandapower.run import runpp
 from pandapower.diagnostic_reports import diagnostic_report
 from pandapower.toolbox import get_connected_elements
@@ -115,16 +112,13 @@ def diagnostic(net, report_style='detailed', warnings_only=False, return_result_
         "nom_voltage_tolerance": nom_voltage_tolerance,
         "numba_tolerance": numba_tolerance
     }
-    if warnings_only:
-        logger.setLevel(logging.WARNING)
-    else:
-        logger.setLevel(logging.INFO)
-    logger.propagate = False
 
     if report_style == 'detailed':
-        diagnostic_report(net, diag_results, diag_errors, diag_params, compact_report=False)
+        diagnostic_report(net, diag_results, diag_errors, diag_params, compact_report=False,
+                          warnings_only=warnings_only)
     elif report_style == 'compact':
-        diagnostic_report(net, diag_results, diag_errors, diag_params, compact_report=True)
+        diagnostic_report(net, diag_results, diag_errors, diag_params, compact_report=True,
+                          warnings_only=warnings_only)
     if return_result_dict:
         return diag_results
 
@@ -327,7 +321,7 @@ def no_ext_grid(net):
 
     """
 
-    if not len(net.ext_grid) > 0:
+    if net.ext_grid.in_service.sum() + (net.gen.slack & net.gen.in_service).sum() == 0:
         return True
 
 
@@ -717,7 +711,7 @@ def disconnected_elements(net):
                                                    'disconnected sgens'    : sgen_indices}
 
     """
-
+    import pandapower.topology as top
     mg = top.create_nxgraph(net)
     sections = top.connected_components(mg)
     disc_elements = []
@@ -725,7 +719,9 @@ def disconnected_elements(net):
     for section in sections:
         section_dict = {}
 
-        if not section & set(net.ext_grid.bus) and any(net.bus.in_service.loc[section]):
+        if not section & set(net.ext_grid.bus[net.ext_grid.in_service]).union(
+                net.gen.bus[net.gen.slack & net.gen.in_service]) and any(
+                net.bus.in_service.loc[section]):
             section_buses = list(net.bus[net.bus.index.isin(section)
                                          & (net.bus.in_service == True)].index)
             section_switches = list(net.switch[net.switch.bus.isin(section_buses)].index)
@@ -801,15 +797,15 @@ def wrong_reference_system(net):
     """
     check_results = {}
     neg_loads = list(net.load[net.load.p_mw < 0].index)
-    pos_gens = list(net.gen[net.gen.p_mw < 0].index)
-    pos_sgens = list(net.sgen[net.sgen.p_mw < 0].index)
+    neg_gens = list(net.gen[net.gen.p_mw < 0].index)
+    neg_sgens = list(net.sgen[net.sgen.p_mw < 0].index)
 
     if neg_loads:
         check_results['loads'] = neg_loads
-    if pos_gens:
-        check_results['gens'] = pos_gens
-    if pos_sgens:
-        check_results['sgens'] = pos_sgens
+    if neg_gens:
+        check_results['gens'] = neg_gens
+    if neg_sgens:
+        check_results['sgens'] = neg_sgens
 
     if check_results:
         return check_results
@@ -906,24 +902,20 @@ def deviation_from_std_type(net):
 
 def parallel_switches(net):
     """
-        Checks for parallel switches.
+    Checks for parallel switches.
 
-         INPUT:
-            **net** (PandapowerNet)    - pandapower network
+     INPUT:
+        **net** (PandapowerNet)    - pandapower network
 
-
-         OUTPUT:
-            **parallel_switches** (list)   - List of tuples each containing parallel switches.
-
-
-
-
+     OUTPUT:
+        **parallel_switches** (list)   - List of tuples each containing parallel switches.
     """
     parallel_switches = []
     compare_parameters = ['bus', 'element', 'et']
     parallels_bus_and_element = list(
         net.switch.groupby(compare_parameters).count().query('closed > 1').index)
     for bus, element, et in parallels_bus_and_element:
-        parallel_switches.append(list(net.switch.query('bus==@bus & element==@element & et==@et').index))
+        parallel_switches.append(list(net.switch.query(
+            'bus==@bus & element==@element & et==@et').index))
     if parallel_switches:
         return parallel_switches

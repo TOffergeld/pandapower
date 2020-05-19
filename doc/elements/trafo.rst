@@ -34,7 +34,7 @@ Input Parameters
    :delim: ;
    :widths: 15, 10, 25, 40
   
-\*necessary for executing a power flow calculation |br| \*\*optimal power flow parameter
+\*necessary for executing a balanced power flow calculation |br| \*\*optimal power flow parameter |br| \*\*\*necessary for executing a three phase power flow / single phase short circuit
 
 .. note:: The transformer loading constraint for the optimal power flow corresponds to the option trafo_loading="current":
 
@@ -48,6 +48,12 @@ The equivalent circuit used for the transformer can be set in the power flow wit
 
 .. image:: trafo_t.png
 	:width: 30em
+	:align: center
+
+*sequence = 0:*
+
+.. image:: trafo_t_zero.png
+	:width: 50em
 	:align: center
 
 *trafo_model='pi':*
@@ -108,8 +114,8 @@ The short-circuit impedance is calculated as:
    :nowrap:
 
    \begin{align*}
-   z_k &= \frac{vk\_percent}{100} \cdot \frac{1000}{sn\_kva} \\
-   r_k &= \frac{vkr\_percent}{100} \cdot \frac{1000}{sn\_kva} \\
+   z_k &= \frac{vk\_percent}{100} \cdot \frac{1000}{sn\_mva} \\
+   r_k &= \frac{vkr\_percent}{100} \cdot \frac{1000}{sn\_mva} \\
    x_k &= \sqrt{z^2 - r^2} \\
    \underline{z}_k &= r_k + j \cdot x_k
    \end{align*}    
@@ -121,7 +127,7 @@ The magnetising admittance is calculated as:
 
    \begin{align*}
    y_m &= \frac{i0\_percent}{100} \\
-   g_m &= \frac{pfe\_mw}{sn\_kva \cdot 1000} \cdot \frac{1000}{sn\_kva} \\
+   g_m &= \frac{pfe\_mw}{sn\_mva \cdot 1000} \cdot \frac{1000}{sn\_mva} \\
    b_m &= \sqrt{y_m^2 - g_m^2} \\
    \underline{y_m} &= g_m - j \cdot b_m
    \end{align*}    
@@ -133,7 +139,7 @@ The values calculated in that way are relative to the rated values of the transf
 
    \begin{align*}
     Z_{N} &= \frac{V_{N}^2}{S_{N}} \\
-    Z_{ref, trafo} &= \frac{vn\_lv\_kv^2 \cdot 1000}{sn\_kva} \\
+    Z_{ref, trafo} &= \frac{vn\_lv\_kv^2 \cdot 1000}{sn\_mva} \\
     \underline{z} &= \underline{z}_k \cdot \frac{Z_{ref, trafo}}{Z_{N}} \\
     \underline{y} &= \underline{y}_m \cdot \frac{Z_{N}}{Z_{ref, trafo}} \\
     \end{align*}
@@ -153,10 +159,10 @@ The reference voltage is then multiplied with the tap factor:
    :nowrap:
    
    \begin{align*}
-    n_{tap} = 1 + (tp\_pos - tp\_neutral) \cdot \frac{tp\_st\_percent}{100}
+    n_{tap} = 1 + (tap\_pos - tap\_neutral) \cdot \frac{tap\_st\_percent}{100}
     \end{align*}
     
-On which side the reference voltage is adapted depends on the :math:`tp\_side` variable:
+On which side the reference voltage is adapted depends on the :math:`tap\_side` variable:
 
 .. tabularcolumns:: |p{0.2\linewidth}|p{0.15\linewidth}|p{0.15\linewidth}|
 .. csv-table:: 
@@ -192,7 +198,7 @@ The angle shift can be directly defined in tap_step_degree, in which case:
    :nowrap:
    
    \begin{align*}
-   \theta_{tp} = tp\_st\_degree \cdot (tp\_pos - tp\_neutral)
+   \theta_{tp} = tap\_st\_degree \cdot (tap\_pos - tap\_neutral)
    \end{align*}
 
 or it can be given as a constant voltage step in tap_step_percent, in which case the angle is calculated as:
@@ -201,7 +207,7 @@ or it can be given as a constant voltage step in tap_step_percent, in which case
    :nowrap:
    
    \begin{align*}
-   \theta_{tp} = 2 \cdot arcsin(\frac{1}{2} \cdot \frac{tp\_st\_percent}{100})  \cdot (tp\_pos - tp\_neutral)
+   \theta_{tp} = 2 \cdot arcsin(\frac{1}{2} \cdot \frac{tap\_st\_percent}{100})  \cdot (tap\_pos - tap\_neutral)
    \end{align*}
 
 If both values are given for an ideal phase shift transformer, the power flow will raise an error.
@@ -231,15 +237,38 @@ Result Parameters
    
    \begin{align*}
     p\_hv\_mw &= Re(\underline{v}_{hv} \cdot \underline{i}^*_{hv}) \\    
-    q\_hv\_kvar &= Im(\underline{v}_{hv} \cdot \underline{i}^*_{hv}) \\
+    q\_hv\_mvar &= Im(\underline{v}_{hv} \cdot \underline{i}^*_{hv}) \\
     p\_lv\_mw &= Re(\underline{v}_{lv} \cdot \underline{i}^*_{lv}) \\
-    q\_lv\_kvar &= Im(\underline{v}_{lv} \cdot \underline{i}^*_{lv}) \\
+    q\_lv\_mvar &= Im(\underline{v}_{lv} \cdot \underline{i}^*_{lv}) \\
 	pl\_mw &= p\_hv\_mw + p\_lv\_mw \\
-	ql\_kvar &= q\_hv\_kvar + q\_lv\_kvar \\
+	ql\_mvar &= q\_hv\_mvar + q\_lv\_mvar \\
     i\_hv\_ka &= i_{hv} \\
     i\_lv\_ka &= i_{lv}
     \end{align*}
     
+*net.res_trafo_3ph*
+
+.. tabularcolumns:: |p{0.15\linewidth}|p{0.10\linewidth}|p{0.55\linewidth}|
+.. csv-table:: 
+   :file: trafo_res_3ph.csv
+   :delim: ;
+   :widths: 15, 10, 55
+
+
+.. math::
+   :nowrap:
+   
+   \begin{align*}
+    p\_hv\_mw_{phase} &= Re(\underline{v}_{hv_{phase}} \cdot \underline{i}^*_{hv_{phase}}) \\    
+    q\_hv\_mvar_{phase} &= Im(\underline{v}_{hv_{phase}} \cdot \underline{i}^*_{hv_{phase}}) \\
+    p\_lv\_mw_{phase} &= Re(\underline{v}_{lv_{phase}} \cdot \underline{i}^*_{lv_{phase}}) \\
+    q\_lv\_mvar_{phase} &= Im(\underline{v}_{lv_{phase}} \cdot \underline{i}^*_{lv_{phase}}) \\
+	pl\_mw_{phase} &= p\_hv\_mw_{phase} + p\_lv\_mw_{phase} \\
+	ql\_mvar_{phase} &= q\_hv\_mvar_{phase} + q\_lv\_mvar_{phase} \\
+    i\_hv\_ka_{phase} &= i_{hv_{phase}} \\
+    i\_lv\_ka_{phase}&= i_{lv_{phase}}
+    \end{align*}
+
 The definition of the transformer loading depends on the trafo_loading parameter of the power flow.
 
 For trafo_loading="current", the loading is calculated as:
@@ -248,7 +277,7 @@ For trafo_loading="current", the loading is calculated as:
    :nowrap:
    
    \begin{align*}  
-    loading\_percent &= max(\frac{i_{hv} \cdot vn\_hv\_kv}{sn\_kva}, \frac{i_{lv} \cdot vn\_lv\_kv}{sn\_kva})  \cdot 100
+    loading\_percent &= max(\frac{i_{hv} \cdot vn\_hv\_kv}{sn\_mva}, \frac{i_{lv} \cdot vn\_lv\_kv}{sn\_mva})  \cdot 100
    \end{align*}
     
 
@@ -258,5 +287,5 @@ For trafo_loading="power", the loading is defined as:
    :nowrap:
    
    \begin{align*}  
-    loading\_percent &= max( \frac{i_{hv} \cdot v_{hv}}{sn\_kva}, \frac{i_{lv} \cdot v_{lv}}{sn\_kva}) \cdot 100
+    loading\_percent &= max( \frac{i_{hv} \cdot v_{hv}}{sn\_mva}, \frac{i_{lv} \cdot v_{lv}}{sn\_mva}) \cdot 100
     \end{align*} 

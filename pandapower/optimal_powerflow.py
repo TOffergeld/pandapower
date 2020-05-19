@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016-2018 by University of Kassel and Fraunhofer Institute for Energy Economics
+# Copyright (c) 2016-2020 by University of Kassel and Fraunhofer Institute for Energy Economics
 # and Energy System Technology (IEE), Kassel. All rights reserved.
 
 
 import warnings
 from sys import stdout
 
-from pypower.add_userfcn import add_userfcn
-from pypower.ppoption import ppoption
+from pandapower.pypower.add_userfcn import add_userfcn
+from pandapower.pypower.ppoption import ppoption
 from scipy.sparse import csr_matrix as sparse
 
 from pandapower.auxiliary import ppException, _clean_up, _add_auxiliary_elements
-from pandapower.idx_bus import VM
-from pandapower.opf.opf import opf
-from pandapower.opf.printpf import printpf
+from pandapower.pypower.idx_bus import VM
+from pandapower.pypower.opf import opf
+from pandapower.pypower.printpf import printpf
 from pandapower.pd2ppc import _pd2ppc
 from pandapower.pf.run_newton_raphson_pf import _run_newton_raphson_pf
-from pandapower.results import _copy_results_ppci_to_ppc, reset_results, \
+from pandapower.results import _copy_results_ppci_to_ppc, init_results, \
     _extract_results
 
 
@@ -36,9 +36,10 @@ def _optimal_powerflow(net, verbose, suppress_warnings, **kwargs):
     net["OPF_converged"] = False
     net["converged"] = False
     _add_auxiliary_elements(net)
-    reset_results(net)
+    init_results(net, "opf")
 
     ppc, ppci = _pd2ppc(net)
+
     if not ac:
         ppci["bus"][:, VM] = 1.0
     net["_ppc_opf"] = ppci

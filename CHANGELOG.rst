@@ -1,10 +1,93 @@
 Change Log
 =============
 
+[2.2.2]- 2020-03-17
+----------------------
+- [CHANGED] reset_results empties result tables per default
+- [CHANGED] nan values result tables of power system test cases are emptied
+- [ADDED] dclines and considering given branch indices by create_nxgraph()
+- [ADDED] use_umfpack and permc_spec option from scipy spsolve in Newton-Raphson power flow
+- [FIXED] Changed the __deepcopy__ for pandapowerNet back to using copy.deepcopy, fixed the issue that caused the switch to json #676
+- [FIXED] Potential memory leaks due to circular references in JSONSerializableObjects, fixed by using weakref #677
+
+[2.2.1]- 2020-01-29
+----------------------
+- [FIXED] Missing csv files #625
+- [FIXED] deepcopy speed and missing DataFrames in net #620, #631
+- [FIXED] simple plotly error with generic coords #619
+- [FIXED] create line with passed geodata #610
+- [FIXED] ConstControl write to and all_index attribute #609
+- [FIXED] collection plotting issue #608
+
+
+[2.2.0]- 2020-01-17
+----------------------
+- [ADDED] control and timeseries module
+- [ADDED] Support phasor measurement in state estimation
+- [ADDED] Support recycle in state estimation
+- [ADDED] PowerModels.jl converter callable without running the PowerModels optimization
+- [ADDED] Other PowerModels features via interface callable (e.g. network data check and different solver)
+- [ADDED] toolbox function select_subnet now also copies cost data and net parameters
+- [ADDED] toolbox functions replace_ward_by_internal_elements and replace_xward_by_internal_elements
+- [ADDED] consideration of result tables in toolbox functions drop
+- [ADDED] new jupyter notebook examples for time series, controller and PowerModels.jl interface
+- [ADDED] reindex_buses() toolbox function
+
+- [FIXED] Bugfixes in PowerModels conversion, OPF in general and tests
+- [FIXED] renew opf_task() toolbox function which got outdated
+- [FIXED] dtype at element parameter in cost tables
+- [FIXED] convert_format.py: added the renaming of controller column and of the controller attributes, added tests for version 2.1.0
+
+- [CHANGED] Unified the mesurement unit conversion of state estimation in ppc conversion
+- [CHANGED] OPF bounds and settings for gens. limits or fixed values can now be enforced. See #511
+- [CHANGED] OPF documentation and _check_necessary_opf_parameters()
+- [CHANGED] JSON I/O: pandapower objects that are derived from JSONSerializableClass are now instantiated using __new__ instead of __init__ (as before), and the serialization has been adjusted; self.update_initialized(locals()) is not necessary anymore and has been removed; restore_json_objects is not needed anymore and has been removed
+- [CHANGED] column name in net.controller: "controller" -> "object"
+- [CHANGED] variable names in ContinuousTapControl ("u_set" -> "vm_set_pu") and in DiscreteTapControl ("u_lower" -> "vm_lower_pu", "u_upper" -> "vm_upper_pu")
+- [CHANGED] __version__ is now changed to 2.2.0
+
+[2.1.0]- 2019-07-08
+----------------------
+- [ADDED] calc_single_sc function to analyse a single fault instead of vectorized fault
+- [ADDED] convenience function for logarithmic colormaps in plotting
+- [CHANGED] corrected spelling 'continous' to 'continuous' in several functions
+- [ADDED] additional standard types for overhead lines
+- [CHANGED] make pp.to_json format closer to the JSON standard #406
+- [ADDED] PowerModels.jl storage interface for time series based storage optimization.
+- [ADDED] PowerModels.jl OTS interface for optimize transmission switching optimization.
+- [ADDED] PowerModels.jl TNEP interface for transmission expansion optimization. See Jupyter Notebook
+- [ADDED] pytest slow marker for tests and functions to run all, slow or fast tests
+- [ADDED] Graph-Tool interface
+- [ADDED] Multiple new algorithms and robust estimators in state estimation
+- [ADDED] Support measurements for trafo3w in state estimation
+- [ADDED] Auto zero-injection bus handling in state estimation
+
+[2.0.1]- 2019-03-28
+----------------------
+- [FIXED] bug in short-circuit impedance of gens
+- [ADDED] use estimation of rdss_pu defined in IEC 60909 of gens if not defined
+
+[2.0.0]- 2019-03-21
+----------------------
+- [CHANGED] units from kW/kVAr/kVA to MW/MVAr/MVA in all elements #73
+- [CHANGED] signing system from load to generation in gen, sgen and ext_grid #208
+- [CHANGED] all trafo tap parameters from 'tp' to 'tap', tp_mid to tap_neutral #246
+- [CHANGED] all trafo short-circuit voltage parameter names from "vsc" to "vk" #246
+- [CHANGED] definition of cost functions #211
+- [CHANGED] definition of measurements in measurement table #343
+- [ADDED] interface to PowerModels.jl for OPF #207
+- [CHANGED] removed Python 2 support #224
+- [ADDED] load flow and OPF for user-defined temperature of lines, with the optional columns in line table "alpha" and "temperature_degree_celsius" #283
+- [ADDED] z_ohm parameter in net.switch to assign resistance to switches #259
+- [FIXED] initializing from results also considers auxiliary buses #236
+- [ADDED] trafo3w switches are supported in create_nxgraph #271
+- [CHANGED] create_nxgraph adds edges in multigraph with key=(element, idx) instead of key=0,1.. #85
+- [CHANGED] patch size in create_bus_collection is not duplicated for rectangles anymore #181
+
 [1.6.1] - 2019-02-18
 ----------------------
 - [CHANGED] Patch size in create_bus_collection is not duplicated for rectangles anymore #181
-- [CHANGED] Mask colormap z array to ensure nan handling 
+- [CHANGED] Mask colormap z array to ensure nan handling
 - [FIXED] active power distribution in DC OPF for multiple generators at one bus
 - [ADDED] support for networkx graphs in json IO
 - [ADDED] support for shapely objects in json IO
@@ -93,7 +176,7 @@ Change Log
 ----------------------
 
 - [ADDED] possibility to save networks to an sql database
-- [CAHNGED] major change in fileIO: all networks are converted to a uniform dataframe only version before they are saved as excel, json or sql. Old files can still be loaded, but all files saved with v1.4 can only be loaded with v1.4!
+- [CHANGED] major change in fileIO: all networks are converted to a uniform dataframe only version before they are saved as excel, json or sql. Old files can still be loaded, but all files saved with v1.4 can only be loaded with v1.4!
 - [FIXED] all tests now pass if numba is not installed (although pandapower might be slow without numba)
 - [FIXED] state estimation bug with phase shift transformers
 - [CHANGED] OPF now raises specific warning if parameters are missing instead of generic exception

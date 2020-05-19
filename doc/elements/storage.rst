@@ -2,6 +2,10 @@
 Storage
 ==================
 
+.. note::
+
+   Since storage power values are given in the consumer system, positive power models charging and negative power models discharging.
+
 .. seealso::
     :ref:`Unit Systems and Conventions <conventions>`
 
@@ -45,16 +49,12 @@ The PQ-Values are calculated from the parameter table values as:
 
    \begin{align*}
     P_{storage} &= p\_mw \cdot scaling \\
-    Q_{storage} &= q\_kvar \cdot scaling \\
+    Q_{storage} &= q\_mvar \cdot scaling \\
     \end{align*}
 
 .. note::
 
-   Since all power values are given in the consumer system, negative power models charging and positive activee power models discharging.
-
-.. note::
-
-    The apparent power value sn_kva, state of charge soc and storage capacity max_e_mwh are provided as additional information for usage in controller or other applications based on panadapower. It is not considered in the power flow!
+    The apparent power value sn_mva, state of charge soc and storage capacity max_e_mwh are provided as additional information for usage in controller or other applications based on panadapower. It is not considered in the power flow!
 
 Result Parameters
 ==========================

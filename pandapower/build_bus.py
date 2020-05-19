@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016-2018 by University of Kassel and Fraunhofer Institute for Energy Economics
+# Copyright (c) 2016-2020 by University of Kassel and Fraunhofer Institute for Energy Economics
 # and Energy System Technology (IEE), Kassel. All rights reserved.
 
 
@@ -9,10 +9,12 @@ from itertools import chain
 
 import numpy as np
 import pandas as pd
+from packaging import version
+from numpy import complex128
 
 from pandapower.auxiliary import _sum_by_group
-from pandapower.idx_bus import BUS_I, BASE_KV, PD, QD, GS, BS, VMAX, VMIN, BUS_TYPE, NONE, VM, VA,\
-                               CID, CZD, bus_cols, REF
+from pandapower.pypower.idx_bus import BUS_I, BASE_KV, PD, QD, GS, BS, VMAX, VMIN, BUS_TYPE, NONE, VM, VA, \
+    CID, CZD, bus_cols, REF
 
 try:
     from numba import jit
@@ -20,7 +22,7 @@ except ImportError:
     from .pf.no_numba import jit
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, cache=False)
 def ds_find(ar, bus):  # pragma: no cover
     while True:
         p = ar[bus]
@@ -30,7 +32,7 @@ def ds_find(ar, bus):  # pragma: no cover
     return p
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, cache=False)
 def ds_union(ar, bus1, bus2, bus_is_pv):  # pragma: no cover
     root1 = ds_find(ar, bus1)
     root2 = ds_find(ar, bus2)
@@ -42,10 +44,11 @@ def ds_union(ar, bus1, bus2, bus_is_pv):  # pragma: no cover
         ar[root2] = root1
 
 
-@jit(nopython=True, cache=True)
-def ds_create(ar, switch_bus, switch_elm, switch_et_bus, switch_closed, bus_is_pv, bus_in_service):  # pragma: no cover
+@jit(nopython=True, cache=False)
+def ds_create(ar, switch_bus, switch_elm, switch_et_bus, switch_closed, switch_z_ohm,
+              bus_is_pv, bus_in_service):  # pragma: no cover
     for i in range(len(switch_bus)):
-        if not switch_closed[i] or not switch_et_bus[i]:
+        if not switch_closed[i] or not switch_et_bus[i] or switch_z_ohm[i] > 0:
             continue
         bus1 = switch_bus[i]
         bus2 = switch_elm[i]
@@ -53,7 +56,7 @@ def ds_create(ar, switch_bus, switch_elm, switch_et_bus, switch_closed, bus_is_p
             ds_union(ar, bus1, bus2, bus_is_pv)
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, cache=False)
 def fill_bus_lookup(ar, bus_lookup, bus_index):
     for i in range(len(bus_index)):
         bus_lookup[bus_index[i]] = i
@@ -62,7 +65,7 @@ def fill_bus_lookup(ar, bus_lookup, bus_index):
         bus_lookup[b] = bus_lookup[ar[ds]]
 
 
-def create_bus_lookup_numba(net, bus_is_idx, bus_index, gen_is_idx, eg_is_idx):
+def create_bus_lookup_numba(net, bus_index, bus_is_idx, gen_is_mask, eg_is_mask):
     max_bus_idx = np.max(bus_index)
     # extract numpy arrays of switch table data
     switch = net["switch"]
@@ -70,16 +73,17 @@ def create_bus_lookup_numba(net, bus_is_idx, bus_index, gen_is_idx, eg_is_idx):
     switch_elm = switch["element"].values
     switch_et_bus = switch["et"].values == "b"
     switch_closed = switch["closed"].values
+    switch_z_ohm = switch['z_ohm'].values
     # create array for fast checking if a bus is in_service
     bus_in_service = np.zeros(max_bus_idx + 1, dtype=bool)
     bus_in_service[bus_is_idx] = True
     # create array for fast checking if a bus is pv bus
     bus_is_pv = np.zeros(max_bus_idx + 1, dtype=bool)
-    bus_is_pv[net["ext_grid"]["bus"].values[eg_is_idx]] = True
-    bus_is_pv[net["gen"]["bus"].values[gen_is_idx]] = True
+    bus_is_pv[net["ext_grid"]["bus"].values[eg_is_mask]] = True
+    bus_is_pv[net["gen"]["bus"].values[gen_is_mask]] = True
     # create array that represents the disjoint set
     ar = np.arange(max_bus_idx + 1)
-    ds_create(ar, switch_bus, switch_elm, switch_et_bus, switch_closed, bus_is_pv, bus_in_service)
+    ds_create(ar, switch_bus, switch_elm, switch_et_bus, switch_closed, switch_z_ohm, bus_is_pv, bus_in_service)
     # finally create and fill bus lookup
     bus_lookup = -np.ones(max_bus_idx + 1, dtype=int)
     fill_bus_lookup(ar, bus_lookup, bus_index)
@@ -103,24 +107,21 @@ class DisjointSet(dict):
         self[p1] = p2
 
 
-def create_bus_lookup(net, bus_index, bus_is_idx, gen_is_mask, eg_is_mask, r_switch):
+def create_consecutive_bus_lookup(net, bus_index):
     # create a mapping from arbitrary pp-index to a consecutive index starting at zero (ppc-index)
     consec_buses = np.arange(len(bus_index))
     # bus_lookup as dict:
     # bus_lookup = dict(zip(bus_index, consec_buses))
-
     # bus lookup as mask from pandapower -> pypower
     bus_lookup = -np.ones(max(bus_index) + 1, dtype=int)
     bus_lookup[bus_index] = consec_buses
+    return bus_lookup
 
-    # if there are any closed bus-bus switches update those entries
-    slidx = ((net["switch"]["closed"].values == 1) &
-             (net["switch"]["et"].values == "b") &
-             (net["switch"]["bus"].isin(bus_is_idx).values) &
-             (net["switch"]["element"].isin(bus_is_idx).values))
-    net._closed_bb_switches = slidx
 
-    if r_switch == 0 and slidx.any():
+def create_bus_lookup_numpy(net, bus_index, bus_is_idx, gen_is_mask, eg_is_mask, closed_bb_switch_mask):
+    bus_lookup = create_consecutive_bus_lookup(net, bus_index)
+    net._fused_bb_switches = closed_bb_switch_mask & (net["switch"]["z_ohm"].values <= 0)
+    if net._fused_bb_switches.any():
         # Note: this might seem a little odd - first constructing a pp to ppc mapping without
         # fused busses and then update the entries. The alternative (to construct the final
         # mapping at once) would require to determine how to fuse busses and which busses
@@ -130,9 +131,9 @@ def create_bus_lookup(net, bus_index, bus_is_idx, gen_is_mask, eg_is_mask, r_swi
         # Find PV / Slack nodes -> their bus must be kept when fused with a PQ node
         pv_list = [net["ext_grid"]["bus"].values[eg_is_mask], net["gen"]["bus"].values[gen_is_mask]]
         pv_ref = np.unique(np.hstack(pv_list))
-        # get the pp-indices of the buses which are connected to a switch
-        fbus = net["switch"]["bus"].values[slidx]
-        tbus = net["switch"]["element"].values[slidx]
+        # get the pp-indices of the buses which are connected to a switch to be fused
+        fbus = net["switch"]["bus"].values[net._fused_bb_switches]
+        tbus = net["switch"]["element"].values[net._fused_bb_switches]
 
         # create a mapping to map each bus to itself at frist ...
         ds = DisjointSet({e: e for e in chain(fbus, tbus)})
@@ -178,6 +179,30 @@ def create_bus_lookup(net, bus_index, bus_is_idx, gen_is_mask, eg_is_mask, r_swi
                     bus_lookup[bus] = map_to
     return bus_lookup
 
+
+def create_bus_lookup(net, bus_index, bus_is_idx, gen_is_mask, eg_is_mask, numba):
+    switches_with_pos_z_ohm = net["switch"]["z_ohm"].values > 0
+    if switches_with_pos_z_ohm.any() or numba == False:
+        # if there are any closed bus-bus switches find them
+        closed_bb_switch_mask = ((net["switch"]["closed"].values == True) &
+                                 (net["switch"]["et"].values == "b") &
+                                 np.in1d(net["switch"]["bus"].values, bus_is_idx) &
+                                 np.in1d(net["switch"]["element"].values, bus_is_idx))
+
+    if switches_with_pos_z_ohm.any():
+        net._impedance_bb_switches = closed_bb_switch_mask & switches_with_pos_z_ohm
+    else:
+        net._impedance_bb_switches = np.zeros(switches_with_pos_z_ohm.shape)
+
+    if numba:
+        bus_lookup = create_bus_lookup_numba(net, bus_index, bus_is_idx,
+                                             gen_is_mask, eg_is_mask)
+    else:
+        bus_lookup = create_bus_lookup_numpy(net, bus_index, bus_is_idx,
+                                             gen_is_mask, eg_is_mask, closed_bb_switch_mask)
+    return bus_lookup
+
+
 def get_voltage_init_vector(net, init_v, mode):
     if isinstance(init_v, str):
         if init_v == "results":
@@ -209,7 +234,6 @@ def _build_bus_ppc(net, ppc):
     """
     Generates the ppc["bus"] array and the lookup pandapower indices -> ppc indices
     """
-    r_switch = net["_options"]["r_switch"]
     init_vm_pu = net["_options"]["init_vm_pu"]
     init_va_degree = net["_options"]["init_va_degree"]
     mode = net["_options"]["mode"]
@@ -223,27 +247,28 @@ def _build_bus_ppc(net, ppc):
         bus_indices = [net["bus"].index.values, np.array([], dtype=np.int64)]
         max_idx = max(net["bus"].index) + 1
         if nr_xward > 0:
-            aux_xward = np.arange(max_idx, max_idx+nr_xward, dtype=np.int64)
+            aux_xward = np.arange(max_idx, max_idx + nr_xward, dtype=np.int64)
             aux["xward"] = aux_xward
             bus_indices.append(aux_xward)
         if nr_trafo3w:
-            aux_trafo3w = np.arange(max_idx+nr_xward, max_idx+nr_xward+nr_trafo3w)
+            aux_trafo3w = np.arange(max_idx + nr_xward, max_idx + nr_xward + nr_trafo3w)
             aux["trafo3w"] = aux_trafo3w
             bus_indices.append(aux_trafo3w)
         bus_index = np.concatenate(bus_indices)
     else:
         bus_index = net["bus"].index.values
     # get in service elements
-    _is_elements = net["_is_elements"]
-    eg_is_mask = _is_elements['ext_grid']
-    gen_is_mask = _is_elements['gen']
-    bus_is_idx = _is_elements['bus_is_idx']
 
-    if numba and not r_switch:
-        bus_lookup = create_bus_lookup_numba(net, bus_is_idx, bus_index, gen_is_mask, eg_is_mask)
+    if mode == "nx":
+        bus_lookup = create_consecutive_bus_lookup(net, bus_index)
     else:
+        _is_elements = net["_is_elements"]
+        eg_is_mask = _is_elements['ext_grid']
+        gen_is_mask = _is_elements['gen']
+        bus_is_idx = _is_elements['bus_is_idx']
         bus_lookup = create_bus_lookup(net, bus_index, bus_is_idx,
-                                       gen_is_mask, eg_is_mask, r_switch)
+                                       gen_is_mask, eg_is_mask, numba=numba)
+
     n_bus_ppc = len(bus_index)
     # init ppc with empty values
     ppc["bus"] = np.zeros(shape=(n_bus_ppc, bus_cols), dtype=float)
@@ -264,12 +289,13 @@ def _build_bus_ppc(net, ppc):
     # set buses out of service (BUS_TYPE == 4)
     if nr_xward > 0 or nr_trafo3w > 0:
         in_service = np.concatenate([net["bus"]["in_service"].values,
-                                    net["xward"]["in_service"].values,
-                                    net["trafo3w"]["in_service"].values])
+                                     net["xward"]["in_service"].values,
+                                     net["trafo3w"]["in_service"].values])
     else:
         in_service = net["bus"]["in_service"].values
     ppc["bus"][~in_service, BUS_TYPE] = NONE
-    set_reference_buses(net, ppc, bus_lookup)
+    if mode != "nx":
+        set_reference_buses(net, ppc, bus_lookup, mode)
     vm_pu = get_voltage_init_vector(net, init_vm_pu, "magnitude")
     if vm_pu is not None:
         ppc["bus"][:n_bus, VM] = vm_pu
@@ -285,11 +311,11 @@ def _build_bus_ppc(net, ppc):
         if "max_vm_pu" in net.bus:
             ppc["bus"][:n_bus, VMAX] = net["bus"].max_vm_pu.values
         else:
-            ppc["bus"][:n_bus, VMAX] = 2  # changes of VMAX must be considered in check_opf_data
+            ppc["bus"][:n_bus, VMAX] = 2.  # changes of VMAX must be considered in check_opf_data
         if "min_vm_pu" in net.bus:
             ppc["bus"][:n_bus, VMIN] = net["bus"].min_vm_pu.values
         else:
-            ppc["bus"][:n_bus, VMIN] = 0  # changes of VMIN must be considered in check_opf_data
+            ppc["bus"][:n_bus, VMIN] = 0.  # changes of VMIN must be considered in check_opf_data
 
     if len(net.xward):
         _fill_auxiliary_buses(net, ppc, bus_lookup, "xward", "bus", aux)
@@ -301,37 +327,45 @@ def _build_bus_ppc(net, ppc):
 
 
 def _fill_auxiliary_buses(net, ppc, bus_lookup, element, bus_column, aux):
-    element_bus_idx = bus_lookup[net[element][bus_column]]
+    element_bus_idx = bus_lookup[net[element][bus_column].values]
     aux_idx = bus_lookup[aux[element]]
     ppc["bus"][aux_idx, BASE_KV] = ppc["bus"][element_bus_idx, BASE_KV]
     if net._options["mode"] == "opf":
         ppc["bus"][aux_idx, VMIN] = ppc["bus"][element_bus_idx, VMIN]
         ppc["bus"][aux_idx, VMAX] = ppc["bus"][element_bus_idx, VMAX]
     if net._options["init_vm_pu"] == "results":
-        ppc["bus"][aux_idx, VM] = net["res_%s"%element]["vm_internal_pu"].values
+        ppc["bus"][aux_idx, VM] = net["res_%s" % element]["vm_internal_pu"].values
     else:
         ppc["bus"][aux_idx, VM] = ppc["bus"][element_bus_idx, VM]
     if net._options["init_va_degree"] == "results":
-        ppc["bus"][aux_idx, VA] = net["res_%s"%element]["va_internal_degree"].values
+        ppc["bus"][aux_idx, VA] = net["res_%s" % element]["va_internal_degree"].values
     else:
         ppc["bus"][aux_idx, VA] = ppc["bus"][element_bus_idx, VA]
 
-def set_reference_buses(net, ppc, bus_lookup):
+
+def set_reference_buses(net, ppc, bus_lookup, mode):
+    if mode == "nx":
+        return
     eg_buses = bus_lookup[net.ext_grid.bus.values[net._is_elements["ext_grid"]]]
     ppc["bus"][eg_buses, BUS_TYPE] = REF
-    gen_slacks = net._is_elements["gen"] & net.gen["slack"].values
+    if mode == "sc":
+        gen_slacks = net._is_elements["gen"]  # generators are slacks for short-circuit calculation
+    else:
+        gen_slacks = net._is_elements["gen"] & net.gen["slack"].values
     if gen_slacks.any():
         slack_buses = net.gen["bus"].values[gen_slacks]
         ppc["bus"][bus_lookup[slack_buses], BUS_TYPE] = REF
 
 
-def _calc_pq_elements_and_add_on_ppc(net, ppc):
+def _calc_pq_elements_and_add_on_ppc(net, ppc, sequence= None):
     # init values
     b, p, q = np.array([], dtype=int), np.array([]), np.array([])
 
     _is_elements = net["_is_elements"]
     voltage_depend_loads = net["_options"]["voltage_depend_loads"]
-    for element in ["load", "sgen", "storage", "ward", "xward"]:
+    mode = net["_options"]["mode"]
+    pq_elements = ["load", "sgen", "storage", "ward", "xward"] 
+    for element in pq_elements:
         tab = net[element]
         if len(tab):
             if element == "load" and voltage_depend_loads:
@@ -366,6 +400,20 @@ def _calc_pq_elements_and_add_on_ppc(net, ppc):
                 p = np.hstack([p, tab["p_mw"].values * active * scaling * sign])
                 q = np.hstack([q, tab["q_mvar"].values * active * scaling * sign])
             b = np.hstack([b, tab["bus"].values])
+     
+    l_3ph = net["asymmetric_load"]
+    if len(l_3ph) > 0 and mode == "pf":
+            # TODO: Voltage dependent loads
+        vl = _is_elements["asymmetric_load"] * l_3ph["scaling"].values.T / np.float64(1000.)
+        q = np.hstack([q, np.sum(l_3ph[["q_a_mvar", "q_b_mvar", "q_c_mvar"]].values, axis=1) * vl])
+        p = np.hstack([p, np.sum(l_3ph[["p_a_mw", "p_b_mw", "p_c_mw"]].values, axis=1) * vl])
+        b = np.hstack([b, l_3ph["bus"].values])
+    sgen_3ph = net["asymmetric_sgen"]
+    if len(sgen_3ph) > 0 and mode == "pf":
+        vl = _is_elements["sgen_3ph"] * sgen_3ph["scaling"].values.T / np.float64(1000.)
+        q = np.hstack([q, np.sum(sgen_3ph[["q_a_mvar", "q_b_mvar", "q_c_mvar"]].values, axis=1) * vl])
+        p = np.hstack([p, np.sum(sgen_3ph[["p_a_mw", "p_b_mw", "p_c_mw"]].values, axis=1) * vl])
+        b = np.hstack([b, sgen_3ph["bus"].values])
 
     # sum up p & q of bus elements
     if b.size:
@@ -374,6 +422,7 @@ def _calc_pq_elements_and_add_on_ppc(net, ppc):
         b, vp, vq = _sum_by_group(b, p, q)
         ppc["bus"][b, PD] = vp
         ppc["bus"][b, QD] = vq
+        # Todo: Actually, P and Q have to be divided by 3 because Sabc=3*S012 (we are writing pos. seq. values here!)
 
 
 def _calc_shunts_and_add_on_ppc(net, ppc):
@@ -408,14 +457,13 @@ def _calc_shunts_and_add_on_ppc(net, ppc):
     loss_location = net._options["trafo3w_losses"].lower()
     trafo3w = net["trafo3w"]
     if loss_location == "star" and len(trafo3w) > 0:
-
         pfe_mw = trafo3w["pfe_kw"].values * 1e-3
         i0 = trafo3w["i0_percent"].values
         sn_mva = trafo3w["sn_hv_mva"].values
 
-        q_mvar = (sn_mva * i0 / 100.) ** 2 - pfe_mw **2
-        q_mvar[q_mvar<0] = 0
-        q_mvar= np.sqrt(q_mvar)
+        q_mvar = (sn_mva * i0 / 100.) ** 2 - pfe_mw ** 2
+        q_mvar[q_mvar < 0] = 0
+        q_mvar = np.sqrt(q_mvar)
 
         vn_hv_trafo = trafo3w["vn_hv_kv"].values
         vn_hv_bus = ppc["bus"][bus_lookup[trafo3w.hv_bus.values], BASE_KV]
@@ -456,17 +504,19 @@ def _add_ext_grid_sc_impedance(net, ppc):
     if mode == "sc":
         c = ppc["bus"][eg_buses_ppc, C_MAX] if case == "max" else ppc["bus"][eg_buses_ppc, C_MIN]
     else:
-        c = 1.
+        c = 1.1
     if not "s_sc_%s_mva" % case in eg:
         raise ValueError("short circuit apparent power s_sc_%s_mva needs to be specified for "% case +
-                         "external grid" )
-    s_sc = eg["s_sc_%s_mva" % case].values
+                         "external grid \n Try: net.ext_grid['s_sc_max_mva'] = 1000" )
+    s_sc = eg["s_sc_%s_mva" % case].values/ppc['baseMVA']
     if not "rx_%s" % case in eg:
-        raise ValueError("short circuit R/X rate rx_%s needs to be specified for external grid" %
+        raise ValueError("short circuit R/X rate rx_%s needs to be specified for external grid \n Try: net.ext_grid['rx_max'] = 0.1" %
                          case)
     rx = eg["rx_%s" % case].values
 
     z_grid = c / s_sc
+    if mode == 'pf_3ph':
+        z_grid = c / (s_sc/3)  # 3 phase power divided to get 1 ph power                        
     x_grid = z_grid / np.sqrt(rx ** 2 + 1)
     r_grid = rx * x_grid
     eg["r"] = r_grid
@@ -474,8 +524,9 @@ def _add_ext_grid_sc_impedance(net, ppc):
 
     y_grid = 1 / (r_grid + x_grid * 1j)
     buses, gs, bs = _sum_by_group(eg_buses_ppc, y_grid.real, y_grid.imag)
-    ppc["bus"][buses, GS] = gs
-    ppc["bus"][buses, BS] = bs
+    ppc["bus"][buses, GS] = gs * ppc['baseMVA']
+    ppc["bus"][buses, BS] = bs * ppc['baseMVA']
+    return gs * ppc['baseMVA'], bs * ppc['baseMVA']
 
 
 def _add_gen_sc_impedance(net, ppc):
@@ -486,20 +537,29 @@ def _add_gen_sc_impedance(net, ppc):
     gen_buses = gen.bus.values
     bus_lookup = net["_pd2ppc_lookups"]["bus"]
     gen_buses_ppc = bus_lookup[gen_buses]
-
-    vn_net = ppc["bus"][gen_buses_ppc, BASE_KV]
-    cmax = ppc["bus"][gen_buses_ppc, C_MAX]
-    phi_gen = np.arccos(gen.cos_phi)
-
     vn_gen = gen.vn_kv.values
     sn_gen = gen.sn_mva.values
 
-    z_r = vn_net ** 2 / sn_gen
-    x_gen = gen.xdss_pu.values / 100 * z_r
-    r_gen = gen.rdss_pu.values / 100 * z_r
+    rdss_pu = gen.rdss_pu.values
+    xdss_pu = gen.xdss_pu.values
+    gens_without_r = np.isnan(rdss_pu)
+    if gens_without_r.any():
+        #  use the estimations from the IEC standard for generators without defined rdss_pu
+        lv_gens = (vn_gen <= 1.) & gens_without_r
+        hv_gens = (vn_gen > 1.) & gens_without_r
+        large_hv_gens = (sn_gen >= 100) & hv_gens
+        small_hv_gens = (sn_gen < 100) & hv_gens
+        rdss_pu[lv_gens] = 0.15 * xdss_pu[lv_gens]
+        rdss_pu[large_hv_gens] = 0.05 * xdss_pu[large_hv_gens]
+        rdss_pu[small_hv_gens] = 0.07 * xdss_pu[small_hv_gens]
 
-    kg = _generator_correction_factor(vn_net, vn_gen, cmax, phi_gen, gen.xdss_pu)
-    y_gen = 1 / ((r_gen + x_gen * 1j) * kg)
+    vn_net = ppc["bus"][gen_buses_ppc, BASE_KV]
+    cmax = ppc["bus"][gen_buses_ppc, C_MAX]
+    phi_gen = np.arccos(gen.cos_phi.values)
+    kg = vn_gen / vn_net * cmax / (1 + xdss_pu * np.sin(phi_gen))
+
+    z_gen = (rdss_pu + xdss_pu * 1j) * kg / sn_gen
+    y_gen = 1 / z_gen
 
     buses, gs, bs = _sum_by_group(gen_buses_ppc, y_gen.real, y_gen.imag)
     ppc["bus"][buses, GS] = gs
@@ -521,16 +581,12 @@ def _add_motor_impedances_ppc(net, ppc):
     z_motor = 1 / (motor.sn_mva.values * 1e-3) / motor.k  # vn_kv**2 becomes 1**2=1 in per unit
     x_motor = z_motor / np.sqrt(motor.rx ** 2 + 1)
     r_motor = motor.rx * x_motor
-    y_motor = 1 / (r_motor + x_motor * 1j)
+    r_motor_np, x_motor_np = r_motor.values, x_motor.values
+    y_motor = 1 / (r_motor_np + x_motor_np * 1j)
 
     buses, gs, bs = _sum_by_group(motor_buses_ppc, y_motor.real, y_motor.imag)
     ppc["bus"][buses, GS] = gs
     ppc["bus"][buses, BS] = bs
-
-
-def _generator_correction_factor(vn_net, vn_gen, cmax, phi_gen, xdss_pu):
-    kg = vn_gen / vn_net * cmax / (1 + xdss_pu * np.sin(phi_gen))
-    return kg
 
 
 def _add_c_to_ppc(net, ppc):
